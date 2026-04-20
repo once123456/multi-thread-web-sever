@@ -42,10 +42,22 @@ class Server:
             print(f"Received request from {address}")
             method, path, version, request_headers = self.parse_request(request_data)
             status_code, response = self.handle_method(method, path, version, request_headers)
+            
+            status_msg = {
+                200: "OK",
+                400: "Bad Request",
+                403: "Forbidden",
+                404: "Not Found",
+                304: "Not Modified",
+            }
+            status_msg = status_msg.get(status_code, "Unknown")
+            print(f"path: {path} | Status:{status_code} {status_msg}")
+            
             client.sendall(response)
+            
             self.write_log(address, path, status_code)
             
-            if request_headers.get("Connection") == "close": #if no long connection
+            if request_headers and request_headers.get("Connection") == "close": #if no long connection
                 break
         client.close()
 
@@ -74,13 +86,11 @@ class Server:
         return method, path, version, request_headers
 
     def handle_method(self, method, path, version, request_headers):
-        print(f"path: {path}")
-
         # security check 403
-        if ".." in path:
+        if path and ".." in path:
             return self.build_response(403, "Forbidden", version, request_headers)
         
-        if method not in ["GET", "HEAD"]:
+        if method is None or version is None or method not in ["GET", "HEAD"]:
             return self.build_response(400, "Bad Request", version, request_headers)
 
         if method == "GET":
@@ -159,14 +169,11 @@ class Server:
         return False, last_modified
 
     def read_file(self, path):
-        try:
-            with open(os.path.join(self.web_root, path.lstrip('/')), "rb") as f:
-                return f.read()
-        except FileNotFoundError:
-            return b"<h1>404 Not Found</h1>"
+        with open(os.path.join(self.web_root, path.lstrip('/')), "rb") as f:
+            return f.read()
 
     def write_log(self, address, path, status_code):
-        ip = address
+        ip = address[0]
         t = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         log_message = f"[{t}] {ip} | {path} | {status_code}\n"
         with self.log_lock: #lock the log file to avoid race condition
